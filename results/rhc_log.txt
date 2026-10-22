@@ -1,0 +1,24 @@
+n = 5735, had RHC 2184 (38.1%), 30-day mortality 33.4%
+unadjusted risk difference = 0.074
+   scheme     estimator   est    se    lo    hi learner
+     full g-computation 0.055    NA    NA    NA     glm
+     full  IPTW (Hajek) 0.054    NA    NA    NA     glm
+     full          AIPW 0.056 0.014 0.028 0.083     glm
+     full          TMLE 0.056 0.014 0.028 0.084     glm
+ crossfit g-computation 0.055    NA    NA    NA     glm
+ crossfit  IPTW (Hajek) 0.049    NA    NA    NA     glm
+ crossfit          AIPW 0.058 0.015 0.028 0.088     glm
+ crossfit          TMLE 0.058 0.015 0.028 0.088     glm
+     full g-computation 0.015    NA    NA    NA      rf
+     full  IPTW (Hajek) 0.068    NA    NA    NA      rf
+     full          AIPW 0.021 0.003 0.015 0.027      rf
+     full          TMLE 0.080 0.003 0.074 0.086      rf
+ crossfit g-computation 0.014    NA    NA    NA      rf
+ crossfit  IPTW (Hajek) 0.041    NA    NA    NA      rf
+ crossfit          AIPW 0.037 0.012 0.013 0.060      rf
+ crossfit          TMLE 0.040 0.012 0.016 0.064      rf
+             learner scheme     resid_rms correction pseudo_outside_01
+glm full     "glm"   "full"     "0.4172"  "9e-04"    "0.183"          
+glm crossfit "glm"   "crossfit" "0.4226"  "0.0031"   "0.191"          
+rf full      "rf"    "full"     "0.1574"  "0.0063"   "0"              
+rf crossfit  "rf"    "crossfit" "0.4234"  "0.0222"   "0.189"          

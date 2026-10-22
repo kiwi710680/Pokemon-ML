@@ -1,0 +1,5 @@
+"learner","scheme","resid_rms","correction","pseudo_outside_01"
+"glm","full","0.4172","9e-04","0.183"
+"glm","crossfit","0.4226","0.0031","0.191"
+"rf","full","0.1574","0.0063","0"
+"rf","crossfit","0.4234","0.0222","0.189"

@@ -1,0 +1,34 @@
+                k   estimator   mean   bias    sd mean_se coverage mcse_bias
+1.naive         1       naive 211.79 130.97 15.89      NA       NA      0.71
+1.linear        1      linear  58.02 -22.80  4.89      NA       NA      0.22
+1.plugin_knn    1  plugin_knn  81.27   0.45  2.39      NA       NA      0.11
+1.ipw           1         ipw  80.92   0.10  3.31      NA       NA      0.15
+1.aipw_full     1   aipw_full  81.26   0.44  2.15    1.65    0.850      0.10
+1.tmle_full     1   tmle_full  81.26   0.44  2.15    1.65    0.850      0.10
+1.aipw_cf_DML   1 aipw_cf_DML  80.75  -0.07  2.37    2.36    0.948      0.11
+1.tmle_cf       1     tmle_cf  80.77  -0.05  2.35    2.36    0.948      0.11
+10.naive       10       naive 213.14 132.32 14.93      NA       NA      0.67
+10.linear      10      linear  58.07 -22.75  5.22      NA       NA      0.23
+10.plugin_knn  10  plugin_knn  85.14   4.32  2.26      NA       NA      0.10
+10.ipw         10         ipw  80.81  -0.02  3.13      NA       NA      0.14
+10.aipw_full   10   aipw_full  81.48   0.66  2.19    2.07    0.926      0.10
+10.tmle_full   10   tmle_full  81.47   0.65  2.19    2.05    0.926      0.10
+10.aipw_cf_DML 10 aipw_cf_DML  80.19  -0.63  2.35    2.38    0.952      0.10
+10.tmle_cf     10     tmle_cf  80.37  -0.45  2.31    2.32    0.956      0.10
+                  truth
+1.naive        80.82142
+1.linear       80.82142
+1.plugin_knn   80.82142
+1.ipw          80.82142
+1.aipw_full    80.82142
+1.tmle_full    80.82142
+1.aipw_cf_DML  80.82142
+1.tmle_cf      80.82142
+10.naive       80.82142
+10.linear      80.82142
+10.plugin_knn  80.82142
+10.ipw         80.82142
+10.aipw_full   80.82142
+10.tmle_full   80.82142
+10.aipw_cf_DML 80.82142
+10.tmle_cf     80.82142

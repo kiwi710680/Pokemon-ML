@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ML × 因果推論 Lab</title>
+<link rel="stylesheet" href="web/style.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="home" href="index.html">ML × 因果推論 Lab</a>
+  <nav class="labs"><a href="01_pokemon.html">1 寶可夢</a><a href="02_candy.html">2 神奇糖果</a><a href="03_nhefs.html">3 NHEFS</a><a href="04_rhc.html">4 RHC</a><a href="05_ihdp.html">5 IHDP</a><a href="06_lalonde.html">6 LaLonde</a></nav>
+</div></header>
+<main>
+<h1>在瀏覽器裡跑 R：從預測走到因果效果</h1>
+<p class="lead">搭配投影片《Machine learning in causal inference for epidemiology》（1020 版）。每一格程式都能改、能重跑，計算全部在你的瀏覽器裡用真正的 R（webR）完成。</p>
+
+<p class="punch">一條主線：plug-in 的誤差跟著 Q̂ 走；用 EIF 修正之後，只剩 ĝ 誤差 × Q̂ 誤差。六個 Lab，就是這句話在不同資料上的六種樣子。</p>
+
+<div class="cards">
+  <a class="card" href="01_pokemon.html"><div class="k">LAB 1 · 投影片 6–40</div><h3>寶可夢 CP 預測</h3><p>三步驟、gradient descent 的路線、overfitting、一百個平行宇宙的 bias／variance、18 參數 + ridge、cross-validation 與 SuperLearner。</p></a>
+  <a class="card" href="02_candy.html"><div class="k">LAB 2 · 投影片 41–89</div><h3>神奇糖果（模擬，真值已知）</h3><p>plug-in 的三塊誤差算給你看、EIF、one-step、TMLE、R₂ 拆解圖（每一隻波波的 ĝ 誤差 × Q̂ 誤差）、orthogonality 曲線、cross-fitting、positivity 旋鈕、重複模擬。</p></a>
+  <a class="card" href="03_nhefs.html"><div class="k">LAB 3 · Karim 2026 主線</div><h3>NHEFS：戒菸與體重</h3><p>overlap 與 balance 診斷、共用 nuisance、full vs cross-fit、截斷／learner／切分三種敏感度、和論文對帳。</p></a>
+  <a class="card" href="04_rhc.html"><div class="k">LAB 4 · 自己改考卷</div><h3>RHC：右心導管與死亡</h3><p>random forest 在 full sample 背答案：殘差 0.16 vs 0.42、AIPW 被拉回 g-computation、CI 假裝很準；cross-fit 救回來。</p></a>
+  <a class="card" href="05_ihdp.html"><div class="k">LAB 5 · 知道真值</div><h3>IHDP：誰的 CI 在說謊</h3><p>半合成資料，10 份都知道真值：bias、RMSE、95% 覆蓋率。RF full sample 只蓋到 2–3/10，cross-fit 回到 10/10。</p></a>
+  <a class="card" href="06_lalonde.html"><div class="k">LAB 6 · positivity 壞掉</div><h3>LaLonde：當橋不存在</h3><p>實驗基準 1,794 美元；換成 PSID 對照，80% 的人 ĝ &lt; 0.025，估計值從 −14,000 到 +800；trimming 改變的是題目。</p></a>
+</div>
+
+<h2>建議的順序與時間</h2>
+<table class="map">
+<tr><th>Lab</th><th>課堂時間</th><th>回答的問題</th><th>瀏覽器執行時間</th></tr>
+<tr><td>1 寶可夢</td><td>20 分鐘</td><td>ML 是什麼？什麼叫 flexible？為什麼要 CV？</td><td>約 1 分鐘</td></tr>
+<tr><td>2 神奇糖果</td><td>40 分鐘</td><td>plug-in 為什麼偏？EIF 修了哪一塊？DR 與 orthogonality 是什麼？</td><td>約 3–5 分鐘</td></tr>
+<tr><td>3 NHEFS</td><td>20 分鐘</td><td>真實資料上，怎麼診斷、怎麼報告？</td><td>約 2 分鐘</td></tr>
+<tr><td>4 RHC</td><td>15 分鐘</td><td>為什麼要 cross-fitting？</td><td>約 2–4 分鐘</td></tr>
+<tr><td>5 IHDP</td><td>15 分鐘</td><td>CI 真的有 95% 嗎？</td><td>約 2–3 分鐘</td></tr>
+<tr><td>6 LaLonde</td><td>15 分鐘</td><td>overlap 不存在時，估計器能做什麼？</td><td>約 1 分鐘</td></tr>
+</table>
+<p class="ref">Lab 4–6 是 Karim (2026) 的另外三份資料。為什麼放：NHEFS 太乾淨，幾個方法本來就會一致；這三份各自演出一種「方法會不一樣」的情況——learner 過擬合（RHC）、需要真值才能檢查 CI（IHDP）、overlap 不存在（LaLonde）。</p>
+
+<h2>怎麼開</h2>
+<div class="note">第一次開啟需要網路，從 webr.r-wasm.org 下載 R（約 30 MB，之後會快取）；Lab 4–6 還會下載 randomForest。請用 <code>start_lab.bat</code>（或 <code>python -m http.server</code>）啟動本機伺服器再開網址，直接雙擊 HTML 檔讀不到資料。</div>
+<div class="note key">想在自己電腦的 R 跑？<code>R/</code> 資料夾的 01–06 腳本是同一套程式（在 <code>lab/</code> 資料夾下 <code>Rscript R/04_rhc.R</code>）。Lab 1–3 只需要 base R；Lab 4–6 需要 <code>randomForest</code>。所有估計器都在 <code>R/helpers.R</code>，nuisance 引擎在 <code>R/engine.R</code>。</div>
+
+<h2>資料來源</h2>
+<table class="map">
+<tr><td>寶可夢</td><td>75 筆 Pokémon GO 紀錄（openintro），課堂切分依投影片重建</td></tr>
+<tr><td>神奇糖果</td><td>虛構情境，<code>simulate_candy()</code> 模擬</td></tr>
+<tr><td>NHEFS</td><td>CRAN <code>causaldata</code> 套件（MIT）；Hernán &amp; Robins《Causal Inference: What If》</td></tr>
+<tr><td>RHC</td><td>Connors et al. (1996) JAMA；Vanderbilt Biostatistics 公開資料（hbiostat.org/data）</td></tr>
+<tr><td>IHDP</td><td>Hill (2011) 半合成 benchmark；CEVAE 公開版本 ihdp_npci_1–10</td></tr>
+<tr><td>LaLonde</td><td>LaLonde (1986)；Dehejia &amp; Wahba 整理版（users.nber.org/~rdehejia/data）</td></tr>
+</table>
+<p class="ref">分析方法參考 Karim (2026) <i>Three Routes to One Answer</i> 與其 companion repository（github.com/ehsanx/dml-alternatives）；程式碼為獨立撰寫。教學敘事受李宏毅教學風格啟發，非本人授課或背書。</p>
+</main>
+</body>
+</html>

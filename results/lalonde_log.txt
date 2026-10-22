@@ -1,0 +1,33 @@
+experimental benchmark (NSW randomized, simple difference) = 1794 USD
+NSW trainees 185 + PSID controls 2490; simple difference = -15205
+   scheme     estimator    est  se    lo    hi learner
+     full g-computation    752  NA    NA    NA     glm
+     full  IPTW (Hajek) -11845  NA    NA    NA     glm
+     full          AIPW    171 508  -824  1167     glm
+     full          TMLE  -3497 472 -4422 -2571     glm
+ crossfit g-computation    771  NA    NA    NA     glm
+ crossfit  IPTW (Hajek) -12029  NA    NA    NA     glm
+ crossfit          AIPW    -12 542 -1075  1051     glm
+ crossfit          TMLE  -4422 490 -5382 -3461     glm
+     full g-computation  -1970  NA    NA    NA      rf
+     full  IPTW (Hajek) -14281  NA    NA    NA      rf
+     full          AIPW  -2000 150 -2294 -1705      rf
+     full          TMLE  -2868 153 -3168 -2567      rf
+ crossfit g-computation  -1929  NA    NA    NA      rf
+ crossfit  IPTW (Hajek) -12204  NA    NA    NA      rf
+ crossfit          AIPW  -2389 487 -3343 -1435      rf
+ crossfit          TMLE  -4706 490 -5666 -3746      rf
+             learner scheme     min_g max_g   pct_clipped max_weight
+glm full     "glm"   "full"     "0"   "0.935" "79.701"    "40"      
+glm crossfit "glm"   "crossfit" "0"   "0.958" "80.037"    "40"      
+rf full      "rf"    "full"     "0"   "0.97"  "85.458"    "20"      
+rf crossfit  "rf"    "crossfit" "0"   "1"     "82.243"    "40"      
+             ESS_treated ESS_control
+glm full     "35.048"    "1976.028" 
+glm crossfit "36.01"     "1855.648" 
+rf full      "126.607"   "1977.292" 
+rf crossfit  "35.226"    "1061.293" 
+                       rule n_kept treated_kept pct_kept DML    lo   hi
+                   keep all   2675          185      100 -12 -1075 1051
+ keep g-hat in [0.05, 0.95]    420          173       16 983 -1582 3547
+ keep g-hat in [0.10, 0.90]    304          143       11 503 -2417 3424

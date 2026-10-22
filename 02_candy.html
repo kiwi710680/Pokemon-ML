@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab 2 神奇糖果</title>
+<link rel="stylesheet" href="web/style.css">
+</head>
+<body data-files="R/helpers.R,R/engine.R">
+<header class="top"><div class="wrap">
+  <a class="home" href="index.html">ML × 因果推論 Lab</a>
+  <nav class="labs"><a href="01_pokemon.html">1 寶可夢</a><a href="02_candy.html" aria-current="page">2 神奇糖果</a><a href="03_nhefs.html">3 NHEFS</a><a href="04_rhc.html">4 RHC</a><a href="05_ihdp.html">5 IHDP</a><a href="06_lalonde.html">6 LaLonde</a></nav>
+  <span id="status">準備中…</span>
+</div></header>
+<main>
+<h1>Lab 2　神奇糖果：從 regression 走到 plug-in、EIF、AIPW、TMLE</h1>
+<p class="lead">訓練師在進化前，會餵一些寶可夢吃「神奇糖果」（A = 1）。糖果到底讓進化後 CP 平均多多少？這個 Lab 把投影片 41–89 的每一個概念——plug-in 的三塊誤差、EIF、one-step、targeting、R₂、orthogonality、cross-fitting、positivity——都變成一個算得出來的數字。</p>
+<p><button id="runall" disabled>▶ 全部執行</button>（全部約 3–5 分鐘；最慢的是第 10、14 格）</p>
+<div class="note warn"><b>虛構情境、模擬資料。</b>因為是我們自己生成的，<b>真值 ψ ≈ 80.8</b>、真的 Q 和 g 都知道——所以可以做真實研究做不到的事：把誤差一塊一塊算出來。真實資料（Lab 3–6）就沒有這個奢侈。所有估計器都在 <code>R/helpers.R</code>，打開就看得到每一行。</div>
+<table class="map">
+<tr><th>格</th><th>投影片（1020 版）</th><th>這格回答的問題</th></tr>
+<tr><td>01–03</td><td>41–53、60</td><td>識別之後，因果問題怎麼變成 regression？plug-in 是什麼？</td></tr>
+<tr><td>04–05</td><td>61、66–68</td><td>plug-in 錯在哪？三塊誤差各是多少？</td></tr>
+<tr><td>06</td><td>60</td><td>IPTW 的 HT 與 Hájek 版本；權重健不健康？</td></tr>
+<tr><td>07–09</td><td>73–84</td><td>EIF、one-step（AIPW）、targeting（TMLE）都在解 ℙ<sub>n</sub>D = 0</td></tr>
+<tr><td>10–11</td><td>85–87</td><td>修完剩下的 R₂ 長什麼樣？orthogonality 長什麼樣？</td></tr>
+<tr><td>12–13</td><td>88–89、95</td><td>cross-fitting 救什麼？positivity 差的時候 SE 會怎樣？</td></tr>
+<tr><td>14</td><td>88–93</td><td>重複 30 次：誰對準真值？CI 真的有 95% 嗎？</td></tr>
+</table>
+
+<h2><span class="n">01</span>誰吃到糖？<span class="slide">投影片 41–45</span></h2>
+<p>X = (物種, 進化前 CP)，A = 有沒有吃糖，Y = 進化後 CP。訓練師偏心：CP 高的、伊布，比較容易吃到糖。CP 本身又決定進化後 CP。X 同時影響 A 和 Y——這就是 confounding。</p>
+<div class="cell"><script type="text/r">
+source("R/helpers.R"); source("R/engine.R")
+truth <- candy_truth()                     # population truth psi = E[Y(1) - Y(0)]
+d <- simulate_candy(1500, seed = 2026)
+head(d[, c("species", "cp", "A", "Y")])
+table(species = d$species, Candy = d$A)
+round(tapply(d$cp, d$A, mean), 1)           # treated Pokemon start with higher CP
+pg <- d[d$species == "Pidgey", ]
+lab_par()
+plot(pg$cp, pg$Y, pch = 19, col = ifelse(pg$A == 1, COL$red, COL$teal), xlab = "Original CP (Pidgey)", ylab = "CP after evolution")
+legend("topleft", c("Candy A = 1", "No Candy A = 0"), pch = 19, col = c(COL$red, COL$teal), bty = "n")
+</script></div>
+<div class="look"><b>看什麼：</b>紅點（吃糖）集中在右上——吃糖的本來就比較強。直接比較兩組，會把「本來就比較強」算成糖果的功勞。</div>
+
+<h2><span class="n">02</span>直覺做法：直接相減、一條直線<span class="slide">投影片 47、53</span></h2>
+<div class="cell"><script type="text/r">
+c(truth = truth,
+  naive_difference = mean(d$Y[d$A == 1]) - mean(d$Y[d$A == 0]),
+  linear_adjusted = unname(coef(lm(Y ~ A + cp, data = d))["A"]))
+</script></div>
+<div class="look"><b>看什麼：</b>直接相減 229，差了快三倍（confounding）。加一條直線調整 CP 得到 63，又往另一邊偏（model misspecification：物種不同、關係會彎，直線放不下）。</div>
+
+<h2><span class="n">03</span>Plug-in：同一隻寶可夢，預測兩次<span class="slide">投影片 53、60</span></h2>
+<p>識別假設成立時，<code>ψ = E[Q₁(X) − Q₀(X)]</code>，Q 就是 Lab 1 的 regression。先學 Q̂（這裡用 kNN：同物種、同一組裡找 CP 最接近的 10 隻取平均），對每一隻「假裝吃糖」和「假裝沒吃」各預測一次，相減、平均，就結束了。這叫 g-computation，也叫 plug-in：<code>ψ̂_g = (1/n) Σ {Q̂₁(Xᵢ) − Q̂₀(Xᵢ)}</code>。</p>
+<div class="cell"><script type="text/r">
+nf <- nuisance_full(d, k = 10)               # Q1 = Q-hat(1, X), Q0 = Q-hat(0, X) via kNN; g = g-hat(X) via logistic regression
+head(cbind(d[, c("species", "cp", "A", "Y")], Q1 = round(nf$Q1, 1), Q0 = round(nf$Q0, 1), diff = round(nf$Q1 - nf$Q0, 1)))
+c(truth = truth, plugin_kNN = est_plugin(nf))
+</script></div>
+<div class="look"><b>看什麼：</b>形狀交給 kNN 決定，比直線好很多（84.2）。可是還是偏了 3.4。彈性解決了「形狀猜錯」，怎麼又出現新的偏差？下兩格回答。</div>
+
+<h2><span class="n">04</span>kNN 在哪裡猜錯？<span class="slide">投影片 66–68</span></h2>
+<p>低 CP 的波波很少吃糖。要猜「低 CP 波波<b>如果</b>吃了糖」，kNN 找不到夠近的鄰居，只好拿比較強的來充數。</p>
+<div class="cell"><script type="text/r">
+xs <- data.frame(species = factor("Pidgey", levels = species_levels), cp = 10:460, A = 1, Y = 0)
+q_knn  <- knn_Q(d, xs, a = 1, k = 10)
+q_true <- 1.85 * xs$cp * (1 - xs$cp / 2600) + 20 + 0.30 * xs$cp
+lab_par()
+plot(pg$cp[pg$A == 1], pg$Y[pg$A == 1], pch = 19, col = adjustcolor(COL$red, .5), xlim = c(0, 470),
+     xlab = "Original CP (Pidgey)", ylab = "CP after evolution if eat Candy")
+lines(xs$cp, q_true, lwd = 3, lty = 2); lines(xs$cp, q_knn, lwd = 3, col = COL$red, type = "s")
+rug(pg$cp[pg$A == 1], col = COL$red)
+legend("topleft", c("True Q₁(x)", "kNN Q̂₁(x)"), lty = c(2, 1), lwd = 3, col = c(COL$ink, COL$red), bty = "n")
+</script></div>
+<div class="look"><b>看什麼：</b>下方短線是吃糖的波波，左邊很稀疏。那裡紅色階梯（Q̂₁）明顯高於虛線（Q₁）。這種寶可夢不多，預測 loss 幾乎感覺不到；但 plug-in 要替<b>每一隻</b>預測另一個世界，偏差就一路傳到 ψ̂。</div>
+
+<h2><span class="n">05</span>把 plug-in 的誤差拆成三塊<span class="slide">投影片 61</span></h2>
+<p>投影片 61 的式子：</p>
+<p><code>ψ̂_plug − ψ = (ℙn − P){Q₁ − Q₀}　+　P{(Q̂₁ − Q₁) − (Q̂₀ − Q₀)}　+　(ℙn − P){(Q̂₁ − Q₁) − (Q̂₀ − Q₀)}</code></p>
+<p>真實研究裡這三塊都看不到。但模擬資料知道真的 Q，「母體平均 P」可以用另外 8,000 隻同分布的寶可夢近似——所以三塊都算得出來（約 20 秒）。</p>
+<div class="cell"><script type="text/r">
+pop <- candy_population(8000)
+dec <- decompose_candy(d, pop, k = 10, scheme = "full")
+round(dec$plugin, 2)
+lab_par(mar = c(4.5, 11, 1, 1))
+barplot(rev(dec$plugin), horiz = TRUE, names.arg = rev(c("Total error", "Sampling error", "first-order bias", "empirical-process")),
+        col = rev(c(COL$ink, COL$teal, COL$red, COL$plum)), border = NA, xlab = "Error of ψ (CP)")
+abline(v = 0)
+</script></div>
+<div class="look"><b>看什麼：</b>總誤差約 3.4，幾乎全部來自紅色的 first-order bias（約 4.8）——就是 Q̂ 估錯、平均之後跟著偏的那一塊。抽樣誤差（約 0.2）是本來就該有的。這就是為什麼「預測做準」不夠：first-order bias 跟 ‖Q̂ − Q‖ 同量級，ML 學得多慢，它就多大。</div>
+
+<h2><span class="n">06</span>另一條路：IPTW<span class="slide">投影片 60</span></h2>
+<p>只靠 ĝ：很少吃糖的那類，少數吃了糖的要代表更多同類。HT 版本直接乘權重除以 n；Hájek（stabilized）版本除以各組權重總和。</p>
+<div class="cell"><script type="text/r">
+c(truth = truth, IPTW_HT = est_ipw_ht(d, nf), IPTW_Hajek = est_ipw(d, nf))
+round(weight_summary(d, nf), 1)        # largest weight and effective sample size (ESS) per arm
+overlap_plot(nf$g, d$A, labels = c("candy", "no candy"))
+</script></div>
+<div class="look"><b>看什麼：</b>ĝ 從 0.09 到 0.87，兩組廣泛重疊；最大權重約 10，有效樣本數掉了一些但還健康。Hájek 版本分母是權重總和，權重偏大時比 HT 穩定。IPTW 只信 ĝ，plug-in 只信 Q̂——都是「一張保險」。</div>
+
+<h2><span class="n">07</span>EIF：先在四個人身上算一次<span class="slide">投影片 74–80</span></h2>
+<p>EIF：<code>D(O; g, Q, ψ) = H(A, X){Y − Q_A(X)} + Q₁(X) − Q₀(X) − ψ</code>，H = A/g − (1−A)/(1−g)。先用人造的四個人只看 ψ₁ 那一半，再用真的 g、Q 檢查「平均為 0」。</p>
+<div class="cell"><script type="text/r">
+toy <- data.frame(A = c(1, 0, 1, 0), Y = c(1, 0, 0, 1), Q1hat = c(.2, .2, .6, .6), ghat = c(.5, .5, .25, .25))
+toy$contribution <- with(toy, Q1hat + A * (Y - Q1hat) / ghat)    # one-step contribution for psi_1
+toy
+c(plugin = mean(toy$Q1hat), one_step = mean(toy$contribution))    # 0.4 → 0.2
+true_nu <- data.frame(Q1 = d$Q1, Q0 = d$Q0, g = d$g0)             # the true nuisances: only a simulation has them
+c(mean_D_true = mean(eif(d, true_nu, truth)), sd_D_true = sd(eif(d, true_nu, truth)))
+</script></div>
+<div class="look"><b>看什麼：</b>第 3 人預測 0.6、實際 0，殘差 −0.6，ĝ = 0.25 → 放大 4 倍，把 plug-in 從 0.4 拉到 0.2（個人貢獻可以小於 0，它不是機率）。下面：代真的 g、Q，1,500 隻的 D 平均約 0（只剩抽樣波動），標準差就是之後 SE 的來源。</div>
+
+<h2><span class="n">08</span>修法一：one-step（AIPW）<span class="slide">投影片 81–83</span></h2>
+<p><code>ψ̂ = ψ̂_plug + ℙn D(O; ĝ, Q̂, ψ̂_plug)</code>——把一階項估出來，加回去。代入 D 的定義，ψ̂_plug 自己消掉，就是 AIPW。</p>
+<div class="cell"><script type="text/r">
+plug <- est_plugin(nf)
+one_step <- plug + mean(eif(d, nf, plug))        # psi_plug + P_n D-hat
+H  <- d$A / nf$g - (1 - d$A) / (1 - nf$g); QA <- ifelse(d$A == 1, nf$Q1, nf$Q0)
+c(plugin = plug, correction = mean(H * (d$Y - QA)), one_step = one_step, truth = truth)
+est_aipw(d, nf)                                   # same number, plus EIF-based SE and 95% CI
+mean(eif(d, nf, one_step))                        # P_n D(O; g-hat, Q-hat, psi_AIPW) = 0
+</script></div>
+<div class="look"><b>看什麼：</b>plug-in 84.22 + 修正項 −3.88 = 80.34，真值 80.82。最後一行驗證投影片 83 那句話：AIPW 剛好讓 ℙ<sub>n</sub>D̂ = 0。</div>
+
+<h2><span class="n">09</span>修法二：targeting（TMLE）<span class="slide">投影片 83–84、97–101</span></h2>
+<p>不改答案，改 Q̂：<code>logit Q̂ε(a, X) = logit Q̂(a, X) + ε·H(a, X)</code>。Y 先縮到 [0, 1]，對 H 做沒有截距、以 logit Q̂ 為 offset 的 logistic regression，估出 ε̂，再 plug in。</p>
+<div class="cell"><script type="text/r">
+tm <- est_tmle(d, nf); tm
+lo <- min(d$Y); hi <- max(d$Y); sc <- function(y) pmin(pmax((y - lo) / (hi - lo), 1e-6), 1 - 1e-6)
+QAs <- sc(QA); QAstar <- expit(qlogis(QAs) + tm[["eps"]] * H)        # updated prediction for the observed arm
+c(score_before = mean(H * ((d$Y - lo) / (hi - lo) - QAs)), score_after = mean(H * ((d$Y - lo) / (hi - lo) - QAstar)))
+rbind(AIPW = est_aipw(d, nf), TMLE = tm[1:4])
+</script></div>
+<div class="look"><b>看什麼：</b>ε̂ 很小（約 −0.003），因為 kNN 的 Q̂ 本來就不差。score 從「before」變成「after ≈ 0」：logistic fit 的一階條件就是 ℙ<sub>n</sub>[Ĥ(Y − Q̂*<sub>A</sub>)] = 0。AIPW 和 TMLE 解的是同一個方程式，只是解法不同，所以答案幾乎一樣。</div>
+
+<h2><span class="n">10</span>修完之後剩下什麼：R₂ 與經驗過程項<span class="slide">投影片 85–86、88</span></h2>
+<p><code>ψ̂_AIPW − ψ = (ℙn − P)D + R₂ + (ℙn − P)(D̂ − D)</code>，其中 <code>R₂ = E[(ĝ − g)/ĝ·(Q̂₁ − Q₁)] + E[(ĝ − g)/(1 − ĝ)·(Q̂₀ − Q₀)]</code>。把 full sample 和 cross-fitting 各拆一次（約 40 秒），先看數字和長條圖：每一根長條是一塊誤差，菱形是總誤差。</p>
+<div class="cell"><script type="text/r">
+dec_cf <- decompose_candy(d, pop, k = 10, scheme = "crossfit")
+tab <- rbind(plugin_full = dec$plugin, AIPW_full = dec$aipw, AIPW_crossfit = dec_cf$aipw)
+colnames(tab) <- c("total", "sampling", "first_order_or_R2", "empirical_process")
+round(tab, 2)
+round(rbind(full = dec$L2, crossfit = dec_cf$L2), 3)   # L2 error of g-hat, of Q-hat, and their product
+
+# Figure: one group per estimator; bars = error components, diamond = total error
+cols <- c(COL$teal, COL$red, COL$plum)
+lab_par(mar = c(4.5, 9, 1, 1))
+bp <- barplot(t(tab[3:1, 2:4]), beside = TRUE, horiz = TRUE, col = cols, border = NA,
+              names.arg = c("AIPW\ncross-fit", "AIPW\nfull", "plug-in\nfull"),
+              xlim = c(-2.5, 5.5), xlab = "error of the estimate (CP)")
+abline(v = 0, col = COL$ink)
+points(tab[3:1, "total"], colMeans(bp), pch = 23, bg = "white", cex = 2.2, lwd = 2)
+legend("bottomright", c("sampling: (Pn - P)D", "first-order bias (plug-in) / R2 (AIPW)", "empirical process", "total"),
+       fill = c(cols, NA), border = NA, pch = c(NA, NA, NA, 23), pt.bg = "white", pt.cex = 1.6, bty = "n")
+</script></div>
+<div class="look"><b>看什麼：</b>
+<ul>
+<li>最上面那組（plug-in）的紅色長條約 4.8，是 first-order bias；換到 AIPW，紅色變成 R₂，只剩約 −1——一階項變成「ĝ 誤差 × Q̂ 誤差」。</li>
+<li>數字表下面那張 L2 表：‖ĝ − g‖ 只有 0.04，‖Q̂ − Q‖ 約 19，乘起來不到 1：兩個都不完美，乘起來就小了。</li>
+<li>紫色（empirical process）在 full sample 約 0.9，cross-fit 只剩約 −0.3：預測和打分數用不同的人，這一塊就壓下去了。</li>
+<li>你可能會想說：那 cross-fit 的菱形（約 −2.1）怎麼反而比 full sample（約 −0.5）離 0 更遠？因為這只是一份資料，R₂ 和抽樣誤差剛好同號疊在一起。cross-fitting 保證的不是「每一份都比較準」，而是誤差的結構乾淨、CI 誠實——第 14 格重複很多次才看得到。</li>
+<li>藍色（抽樣誤差）在兩種 AIPW 一模一樣——它是真 EIF 的樣本平均，跟 nuisance 怎麼估無關，也就是最後 CI 要描述的那一塊。</li>
+</ul></div>
+
+<p>那 R₂ 為什麼會那麼小？把母體裡每一隻波波的誤差畫出來：左邊是 propensity 的誤差，中間是 outcome 的誤差，右邊把每一隻對 plug-in 的貢獻（紅）和對 R₂ 的貢獻（藍）疊在一起。</p>
+<div class="cell"><script type="text/r">
+if (is.null(dec$units)) stop("R/helpers.R is an old cached copy - press Ctrl+F5 to reload the page, then run again")
+u <- dec$units                               # full-sample models evaluated on the population
+p <- u[u$species == "Pidgey", ]
+pad <- function(y, top = 0.35) { r <- range(y); r + c(0, top * diff(r)) }   # extra room on top for the legend
+
+# averages: Pidgey only (what the dots show) vs the whole population (what enters the decomposition table)
+means <- rbind(Pidgey = colMeans(p[, c("first_order_unit", "R2_unit")]),
+               all_species = colMeans(u[, c("first_order_unit", "R2_unit")]))
+round(means, 2)
+# check: the all-species means reproduce the plug-in first-order term and AIPW R2 from the table above
+round(c(first_order = unname(dec$plugin["first_order"]), R2 = unname(dec$aipw["R2"])), 2)
+
+par(mfrow = c(1, 3), mar = c(5, 5.8, 2.5, 1), mgp = c(3.6, .8, 0), las = 1, bty = "n", col.axis = COL$muted)
+plot(p$cp, p$g_err, pch = 16, cex = .45, col = adjustcolor(COL$plum, .4),
+     xlab = "Original CP (Pidgey)", ylab = "g-hat(X) - g(X)", main = "propensity error")
+abline(h = 0)
+plot(p$cp, p$Q1_err, pch = 16, cex = .45, col = adjustcolor(COL$red, .4), ylim = pad(c(p$Q1_err, p$Q0_err), 0.2),
+     xlab = "Original CP (Pidgey)", ylab = "Q-hat - Q", main = "outcome error")
+points(p$cp, p$Q0_err, pch = 16, cex = .45, col = adjustcolor(COL$teal, .4))
+abline(h = 0)
+legend("topright", c("Q1-hat - Q1", "Q0-hat - Q0"), pch = 16, col = c(COL$red, COL$teal), bty = "n")
+plot(p$cp, p$first_order_unit, pch = 16, cex = .45, col = adjustcolor(COL$red, .35),
+     ylim = pad(c(p$first_order_unit, p$R2_unit)), xlab = "Original CP (Pidgey)",
+     ylab = "contribution per Pokemon (CP)", main = "plug-in term vs R2 term")
+points(p$cp, p$R2_unit, pch = 16, cex = .45, col = adjustcolor(COL$teal, .6))
+abline(h = 0)
+abline(h = means["Pidgey", "first_order_unit"], col = COL$red, lwd = 3, lty = 2)
+abline(h = means["Pidgey", "R2_unit"], col = COL$teal, lwd = 3, lty = 2)
+legend("topright", c("(Q1-hat - Q1) - (Q0-hat - Q0)", "R2 integrand", "Pidgey means"),
+       pch = c(16, 16, NA), lty = c(NA, NA, 2), lwd = c(NA, NA, 3), col = c(COL$red, COL$teal, COL$ink), bty = "n")
+</script></div>
+<div class="look"><b>看什麼：</b>
+<ul>
+<li>左圖：ĝ 的誤差最多約 7 個百分點，是一條平滑的曲線——低 CP 低估、高 CP 高估，logistic 模型的形狀和真正的 g 不完全一樣。中圖：Q̂ 的誤差大很多，中間一段在 ±20 上下跳，兩端更糟：CP 最低那端 Q̂₁ 高估到 +100（第 04 格看過的那個問題），最高那端兩條都往下掉——kNN 在邊界只能找到一邊的鄰居。</li>
+<li>右圖：紅點是每一隻波波對 plug-in 偏差的貢獻，散得很開，波波的平均（紅虛線）約 6.9；藍點是每一隻對 R₂ 的貢獻，要先乘上 (ĝ − g)/ĝ 這個小數字，所以中間一大段都被壓在 0 附近，波波的平均（藍虛線）約 −2.2。</li>
+<li>程式先印出的小表：虛線只是波波的平均；把母體裡所有物種一起平均，剛好是上面拆解表裡的 4.81 和 −1.03——這一格的每一個點，加起來就是那張表。</li>
+<li>藍點只在最左邊（CP &lt; 60）一路掉到 −80：那裡 Q̂₁ 錯了將近 100，ĝ 也低估、而且 ĝ 本身就小，(ĝ − g)/ĝ 不再是小數字。<b>兩個 nuisance 同一個地方一起錯，乘積才會大。</b></li>
+<li>這就是 R₂ 這一行字的長相：<b>Q̂ 錯很多沒關係，只要同一個地方 ĝ 沒有也錯很多，乘起來就小。</b>左下角那一小撮藍點是警告：如果「兩個一起錯」的區域變大（positivity 差、兩個模型都學不到的地方），藍點就會整片散開——第 13 格和 Lab 6 就是那種情況。</li>
+</ul></div>
+<details class="think"><summary>想一想：為什麼 cross-fit 的 R₂ 比 full sample 稍大？</summary>每個 nuisance 只用 4/5 的資料訓練，Q̂ 的誤差變大一點（看 L2 那張表），乘積就大一點。cross-fitting 不是免費的：它用一點點估計精度，換掉「自己改考卷」那一塊。資料少的時候（像 Lab 5 IHDP 的 GLM）這個代價會更明顯。</details>
+
+<h2><span class="n">11</span>Neyman orthogonality 長什麼樣<span class="slide">投影片 87</span></h2>
+<p>讓 nuisance 從真值往旁邊偏 t：<code>g_t = g + t(ḡ − g)</code>、<code>Q_t = Q + t(Q̄ − Q)</code>。plug-in 的 moment 是 <code>E[Q_{1t} − Q_{0t}] − ψ</code>；EIF 的 moment 是 <code>E[D(O; ψ, g_t, Q_t)]</code>。用真的 g、Q 精確算出來（不靠抽樣），畫在同一張圖上。</p>
+<div class="cell"><script type="text/r">
+oc <- orthogonality_curves(pop)
+lab_par()
+plot(oc$t, oc$plugin_Q, type = "l", lwd = 3, col = COL$red, ylim = c(-20, 20),
+     xlab = "t: how far the nuisances move away from the truth", ylab = "moment (0 is ideal)")
+lines(oc$t, oc$eif_both, lwd = 3, col = COL$teal)
+lines(oc$t, oc$eif_Q_only, lwd = 3, lty = 2, col = COL$gold)
+lines(oc$t, oc$eif_g_only, lwd = 3, lty = 3, col = COL$plum)
+abline(h = 0, v = 0, col = "grey80")
+legend("topleft", c("plug-in: perturb Q", "EIF: perturb g and Q", "EIF: perturb Q only (g correct)", "EIF: perturb g only (Q correct)"),
+       col = c(COL$red, COL$teal, COL$gold, COL$plum), lwd = 3, lty = c(1, 1, 2, 3), bty = "n")
+round(oc[oc$t %in% c(-1, -0.5, -0.1, 0, 0.1, 0.5, 1), ], 3)
+</script></div>
+<div class="look"><b>看什麼：</b>
+<ul>
+<li>紅線（plug-in）是斜線：Q 偏一點，答案就偏一點——一階。</li>
+<li>藍線（EIF，兩個都偏）在 t = 0 是平的，離開 0 才慢慢彎上去：t 很小的時候是 t² 的量級。這就是 orthogonality（讀微分）。</li>
+<li>兩條虛線剛好是 0：只要 g 對或 Q 對，不管另一個偏多少，moment 都是 0——這就是 double robustness（讀極限）。<b>同一個乘積，兩種讀法。</b></li>
+</ul></div>
+
+<h2><span class="n">12</span>Cross-fitting：不要自己出題自己改<span class="slide">投影片 85、88、95</span></h2>
+<p>把 kNN 的 k 改成 1：每隻寶可夢最近的鄰居常常就是自己，樣本內殘差被低估，修正項和 SE 都被低估。換成 out-of-fold 預測就恢復了。也試試 k = 3、5、10。</p>
+<div class="cell"><script type="text/r">
+k <- 1
+f  <- nuisance_full(d, k = k)
+cf <- nuisance_crossfit(d, K = 5, seed = 1, k = k)
+rms <- function(nu) sqrt(mean((d$Y - ifelse(d$A == 1, nu$Q1, nu$Q0))^2))
+c(residual_RMS_in_sample = rms(f), residual_RMS_out_of_fold = rms(cf))
+rbind(full_sample = est_aipw(d, f), cross_fit_DML = est_aipw(d, cf), cross_fit_TMLE = est_tmle(d, cf)[1:4])
+</script></div>
+<div class="look"><b>看什麼：</b>k = 1 時樣本內殘差 22.8、out-of-fold 43.4，差了將近一倍。full-sample 的 SE（約 1.6）比 cross-fit（約 2.4）小很多——不是比較準，是<b>假裝比較準</b>。本機重複 500 次（<code>R/02b_candy_montecarlo.R</code>）：k = 1 時 full-sample CI 的覆蓋率只有 85%，cross-fit 是 95%；k = 10 時差距縮小成 93% vs 95%——learner 越會背答案，差距越大。</div>
+
+<h2><span class="n">13</span>Positivity：訓練師越偏心，SE 越大<span class="slide">投影片 89 ④</span></h2>
+<p><code>strength</code> 控制訓練師有多偏心：越大，ĝ 越靠近 0 或 1。看最大權重、cross-fit AIPW 的 SE，以及理論上最小的 SE <code>√(V_eff / n)</code>（效率界）。</p>
+<div class="cell"><script type="text/r">
+tab <- t(sapply(c(0.5, 1, 2, 3), function(s) {
+  ds <- simulate_candy(1500, seed = 2026, strength = s); ps <- candy_population(4000, strength = s)
+  nc <- nuisance_crossfit(ds, K = 5, seed = 1, k = 10); a <- est_aipw(ds, nc)
+  c(strength = s, min_g = min(ds$g0), max_g = max(ds$g0), max_weight = unname(weight_summary(ds, nc)["max_weight"]),
+    AIPW = a[["est"]], SE = a[["se"]], SE_bound = candy_se_bound(ps, 1500))
+}))
+round(tab, 3)
+lab_par()
+plot(tab[, "strength"], tab[, "SE"], type = "b", pch = 19, lwd = 2, col = COL$red, ylim = c(0, max(tab[, "SE"]) * 1.1),
+     xlab = "confounding strength (trainer favouritism)", ylab = "standard error")
+lines(tab[, "strength"], tab[, "SE_bound"], type = "b", pch = 19, lwd = 2, col = COL$teal)
+legend("topleft", c("SE of cross-fit AIPW", "efficiency bound sqrt(V_eff / n)"), col = c(COL$red, COL$teal), lwd = 2, bty = "n")
+</script></div>
+<div class="look"><b>看什麼：</b>strength = 3 時，最小的 g 只剩 0.006，SE 從 2 暴增到 10。藍線是任何估計器都打不破的下界，它也在變大：<code>V_eff = E[σ²/g + σ²/(1−g)] + Var(τ)</code>，g 靠近 0 或 1，第一項就爆。紅線比藍線漲得更快，因為截斷在 [0.025, 0.975]、kNN 在稀疏處學得更差。overlap 差的代價是 precision，換估計器救不回來——Lab 6（LaLonde）是真實資料的版本。</div>
+
+<h2><span class="n">14</span>一份資料可能是運氣：重複 30 次<span class="slide">投影片 88–93</span></h2>
+<p>同一個世界抽 30 份資料（每份 1,500 隻），每份都估一次。看平均有沒有對準真值、95% CI 有沒有大約 95% 蓋到真值。（瀏覽器約 1–2 分鐘；本機的 <code>R/02b_candy_montecarlo.R</code> 跑 500 次：plug-in 偏 +4.3、cross-fit AIPW／TMLE 覆蓋率 95%。）</p>
+<div class="cell"><script type="text/r">
+reps <- 30; k <- 10
+set.seed(1)
+sim <- lapply(seq_len(reps), function(r) suppressWarnings(all_estimates(simulate_candy(1500), k = k)))
+est <- sapply(sim, function(e) e[, "est"])
+cover <- sapply(sim, function(e) e[, "lo"] < truth & e[, "hi"] > truth)
+summ <- data.frame(mean = rowMeans(est), bias = rowMeans(est) - truth, SD = apply(est, 1, sd), coverage = rowMeans(cover))
+round(summ, 2)
+ord <- rownames(est)[-1]
+lab_par(mar = c(4.5, 9, 1, 1))
+stripchart(lapply(ord, function(r) est[r, ]), method = "jitter", pch = 19, col = adjustcolor(COL$teal, .5),
+           group.names = ord, xlab = "ATE estimate", las = 1)
+abline(v = truth, lty = 2, lwd = 2)
+</script></div>
+<div class="look"><b>看什麼：</b>plug-in 整團往右偏（約 +3 到 +4）；AIPW、TMLE 對準虛線。30 次只能看大概：覆蓋率的蒙地卡羅誤差約 ±4%（√(0.95×0.05/30)）。我們跑的那一次 full sample 0.97、cross-fit 0.90，看起來好像 full 比較好——但兩個都在 95% ± 2 個 MCSE 之內，這是雜訊，不是結論。500 次的版本（k = 10）是 full 93%、cross-fit 95%；想看大差距，把 <code>k</code> 改成 1 再跑。</div>
+
+<h2><span class="n">15</span>帶走三件事</h2>
+<p class="punch">plug-in 的誤差跟著 Q̂ 走；用 D 修正之後，只剩 ĝ 誤差 × Q̂ 誤差。</p>
+<ul>
+<li>第 05、10 格：first-order bias（約 4.8）被換成 R₂（約 −1.0）——加法變乘法。</li>
+<li>第 11 格：double robustness（只動一個 → 0）和 orthogonality（兩個都動 → t²）是同一個乘積的兩種讀法。</li>
+<li>第 12、13 格：cross-fitting 處理自己改考卷；positivity 差的代價是 SE，任何估計器都救不了。</li>
+</ul>
+</main>
+<script type="module" src="web/runner.js?v=2"></script>
+</body>
+</html>
